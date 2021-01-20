@@ -15,7 +15,7 @@ use std::marker::Copy;
 
 #[derive(Clone)]
 /// Internal node that serves as a "tree node".
-pub struct ReorgNode<K> {
+pub struct ReorgNode<K, M> {
     /// key of the node. It is used as its key or name.
     key: K,
     /// Index of the node in the system.
@@ -26,37 +26,40 @@ pub struct ReorgNode<K> {
     parent: K,
     /// All nodes that has this node as their "parent",
     children: Vec<K>,
+    /// Custom designated meta data
+    custom_meta: M,
 }
 
-impl<K: Debug> Display for ReorgNode<K> {
+impl<K: Debug, M: Debug> Display for ReorgNode<K, M> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
-            ">key: {:?}\n>Height: {}\n>value: {}\n>Parent: {:?}\n>Children: {:?}",
-            self.key, self.height, self.value, self.parent, self.children
+            ">Key: {:?}\n>Height: {}\n>Value: {}\n>Parent: {:?}\n>Children: {:?}\n>Custom Meta: {:?}",
+            self.key, self.height, self.value, self.parent, self.children, self.custom_meta
         )
     }
 }
 
-impl<K> ReorgNode<K> {
-    pub fn new(key: K, height: u64, value: u64, parent: K) -> ReorgNode<K> {
+impl<K, M> ReorgNode<K, M> {
+    pub fn new(key: K, height: u64, value: u64, parent: K, custom_meta: M) -> ReorgNode<K, M> {
         ReorgNode {
             key,
             height,
             value,
             parent,
             children: Vec::new(),
+            custom_meta,
         }
     }
 }
 
 /// Main working struct of the reogranizational code body.
-pub struct Organizer<K> {
+pub struct Organizer<K, M> {
     /// The current root, or oldest node that we deal with.
-    root: ReorgNode<K>,
+    root: ReorgNode<K, M>,
     /// Every node currently held in the system, stored by their key as its key.
     /// Does not contain the root.
-    nodes_by_key: HashMap<K, ReorgNode<K>>,
+    nodes_by_key: HashMap<K, ReorgNode<K, M>>,
     /// Every node currently held by the system, stored by their height as the key.
     /// As the main functionality is to decide which branch is the longest, this
     /// map has a Vec as the value field, because multiple nodes with the same
@@ -66,7 +69,7 @@ pub struct Organizer<K> {
     /// Buffer for node that doesn't have their parent in the system yet.
     /// This might be because the nodes height is greater by multiple steps
     /// than the one we currently have as head.
-    buffer: HashMap<K, ReorgNode<K>>,
+    buffer: HashMap<K, ReorgNode<K, M>>,
     /// The height of the node with currently greatest height in the system.
     /// (Can also be described as the youngest or newest nodes height.)
     /// (Does not include nodes in the buffer)
@@ -76,18 +79,18 @@ pub struct Organizer<K> {
     allowed_depth: u64,
 }
 
-impl<K: Debug> Display for Organizer<K> {
+impl<K: Debug, M: Debug> Display for Organizer<K, M> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "Root: \n{}\nnode key count: {}\nnode height count: {}\nHeight: {:?}\nAllowed Depth: {:?}", 
+        write!(f, "Root: \n{}\nNode Key Count: {}\nNode Height Count: {}\nHeight: {:?}\nAllowed Depth: {:?}", 
         self.root, self.nodes_by_key.len(), self.nodes_by_height.len(), self.height, self.allowed_depth)
     }
 }
 
-impl<K: Default + Eq + Hash + Clone + Debug + Copy> Organizer<K> {
+impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug> Organizer<K, M> {
     /// Constructor function that takes the first root node - possibly the genesis node -
     /// and the depth we want to allow reorganization to. Stores the root node in its slot,
     /// as well as by height. Root is not stored by key, only by height.
-    pub fn new(root: ReorgNode<K>, allowed_depth: u64) -> Organizer<K> {
+    pub fn new(root: ReorgNode<K, M>, allowed_depth: u64) -> Organizer<K, M> {
         let mut nodes_by_height = HashMap::new();
         nodes_by_height.insert(root.height, vec![root.key]);
         Self {
@@ -108,8 +111,8 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy> Organizer<K> {
 
     /// This function is part of the garbage collection. Deletes every node that in the branch
     /// stemming from the node we designated.
-    pub fn delete_children(&mut self, branch_root: &K) -> Vec<ReorgNode<K>> {
-        let mut ret: Vec<ReorgNode<K>> = Vec::new();
+    pub fn delete_children(&mut self, branch_root: &K) -> Vec<ReorgNode<K, M>> {
+        let mut ret: Vec<ReorgNode<K, M>> = Vec::new();
         // First we try to remove the designated node from the system
         if let Some(removed) = self.nodes_by_key.remove(branch_root) {
             // We add the removed nodes children to the list that we will remove next
@@ -195,18 +198,19 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy> Organizer<K> {
         &self,
         head: K,
         root: Option<K>,
-        callback: &mut dyn FnMut(&ReorgNode<K>) -> T,
+        callback: &mut dyn FnMut(&ReorgNode<K, M>) -> T,
     ) {
         let head_node = self
             .nodes_by_key
             .get(&head)
-            .expect("there in no node stored corresponding to the greatest logged height");
+            .expect("there in no node stored corresponding to the gived key");
+        callback(head_node);
         let mut cursor = head_node.parent;
         while let Some(node) = self.nodes_by_key.get(&cursor) {
             match root {
                 Some(root_key) => {
                     if node.key != root_key {
-                        cursor = root_key
+                        cursor = node.parent
                     } else {
                         break;
                     }
@@ -244,7 +248,7 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy> Organizer<K> {
     /// Panics
     /// A panic will occur if a node has a child listed that we do not have
     /// stored by its key.
-    pub fn insert(&mut self, node: ReorgNode<K>) {
+    pub fn insert(&mut self, node: ReorgNode<K, M>) {
         // if new node older than we search, we don't care about it
         if node.height <= self.allowed_oldest() {
             return;
@@ -349,6 +353,10 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy> Organizer<K> {
         //      parent in the system.
         // buffer?
     }
+
+    pub fn highest_nodes(&self) -> &[K] {
+        self.nodes_by_height.get(&self.height).unwrap()
+    }
 }
 
 /// Utility function that creates a key([u8;32]) from a u64
@@ -361,32 +369,41 @@ fn utoa(u: u64) -> [u8; 32] {
 }
 
 /// Test callback function
-fn callback(node: &ReorgNode<[u8; 32]>) {
+fn callback(node: &ReorgNode<[u8; 32], ()>) {
     println!("{:?} : {}", node.key, node.height);
 }
 
 #[test]
 fn test() {
-    let genesis = ReorgNode::new(utoa(0), 0, 0, utoa(999999999));
+    // Test intentionally fails
+    let genesis = ReorgNode::new(utoa(0), 0, 0, utoa(999999999), ());
     println!("genesis: \n{}", genesis);
     let mut cb = Organizer::new(genesis, 255);
     for i in 1..2000 {
-        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1)))
+        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()))
     }
     println!("\ntree before pushing extra branches \n{}", cb);
     for i in 0..10 {
-        cb.insert(ReorgNode::new(utoa(2000 + i), 1996, 0, utoa(1995)));
+        cb.insert(ReorgNode::new(utoa(2000 + i), 1996, 0, utoa(1995), ()));
     }
     println!("\ntree after pushing extra branches \n{}", cb);
     for i in 0..1000 {
-        cb.insert(ReorgNode::new(utoa(2010 + i), 1997 + i, 0, utoa(2009 + i)));
+        cb.insert(ReorgNode::new(
+            utoa(2010 + i),
+            1997 + i,
+            0,
+            utoa(2009 + i),
+            (),
+        ));
     }
     println!("\ntree after continuing one of the branches \n{}", cb);
     println!("-----------");
-    println!("{:?}", cb.check_height_to_key_diff());
-    cb.apply_callback(utoa(2990), None, &mut callback);
+    println!("This should be the same as the root and nothing else\n{:?}", cb.check_height_to_key_diff());
+    println!("Highest node(s): {:?}", cb.highest_nodes());
+    cb.apply_callback(utoa(3009), Some(utoa(3000)), &mut callback);
     // cb.list_nodes();
     // println!("deleting branch");
     // cb.delete_children(utoa(2));
     // cb.list_nodes();
+    assert!(false)
 }
