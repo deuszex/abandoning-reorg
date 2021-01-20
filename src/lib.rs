@@ -92,10 +92,21 @@ impl<K: Debug, M: Debug> Display for Organizer<K, M> {
     }
 }
 
+impl<K: Default, M: Default> Default for Organizer<K, M> {
+    fn default() -> Self {
+        Organizer {
+            height: 0,
+            root: ReorgNode::default(),
+            nodes_by_key: HashMap::new(),
+            nodes_by_height: HashMap::new(),
+            buffer: HashMap::new(),
+            allowed_depth: 255,
+        }
+    }
+}
+
 impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organizer<K, M> {
-    /// Constructor function that takes the first root node - possibly the genesis node -
-    /// and the depth we want to allow reorganization to. Stores the root node in its slot,
-    /// as well as by height. Root is not stored by key, only by height.
+    /// Default state constructor with predetermined max depth.
     pub fn new(allowed_depth: u64) -> Organizer<K, M> {
         Self {
             height: 0,
@@ -107,6 +118,9 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
         }
     }
 
+    /// Constructor function that takes the first root node - possibly the genesis node -
+    /// and the depth we want to allow reorganization to. Stores the root node in its slot,
+    /// as well as by height. Root is not stored by key, only by height.
     pub fn new_with(root: ReorgNode<K, M>, allowed_depth: u64) -> Organizer<K, M> {
         let mut nodes_by_height = HashMap::new();
         nodes_by_height.insert(root.height, vec![root.key]);
@@ -120,6 +134,7 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
         }
     }
 
+    /// Init function, sets a new root.
     pub fn init(&mut self, first_root: ReorgNode<K, M>) {
         self.height = first_root.height;
         self.nodes_by_height
