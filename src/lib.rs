@@ -53,6 +53,12 @@ impl<K, M> ReorgNode<K, M> {
     }
 }
 
+impl<K: Default, M: Default> Default for ReorgNode<K, M> {
+    fn default() -> Self {
+        ReorgNode::new(K::default(), 0, 0, K::default(), M::default())
+    }
+}
+
 /// Main working struct of the reogranizational code body.
 pub struct Organizer<K, M> {
     /// The current root, or oldest node that we deal with.
@@ -86,11 +92,22 @@ impl<K: Debug, M: Debug> Display for Organizer<K, M> {
     }
 }
 
-impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug> Organizer<K, M> {
+impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organizer<K, M> {
     /// Constructor function that takes the first root node - possibly the genesis node -
     /// and the depth we want to allow reorganization to. Stores the root node in its slot,
     /// as well as by height. Root is not stored by key, only by height.
-    pub fn new(root: ReorgNode<K, M>, allowed_depth: u64) -> Organizer<K, M> {
+    pub fn new(allowed_depth: u64) -> Organizer<K, M> {
+        Self {
+            height: 0,
+            root: ReorgNode::default(),
+            nodes_by_key: HashMap::new(),
+            nodes_by_height: HashMap::new(),
+            buffer: HashMap::new(),
+            allowed_depth,
+        }
+    }
+
+    pub fn new_with(root: ReorgNode<K, M>, allowed_depth: u64) -> Organizer<K, M> {
         let mut nodes_by_height = HashMap::new();
         nodes_by_height.insert(root.height, vec![root.key]);
         Self {
@@ -101,6 +118,13 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug> Organizer<K, M> {
             buffer: HashMap::new(),
             allowed_depth,
         }
+    }
+
+    pub fn init(&mut self, first_root: ReorgNode<K, M>) {
+        self.height = first_root.height;
+        self.nodes_by_height
+            .insert(first_root.height, vec![first_root.key]);
+        self.root = first_root;
     }
 
     /// Returns the difference of height and the allowed depth to determine the highest node
@@ -378,7 +402,10 @@ fn test() {
     // Test intentionally fails
     let genesis = ReorgNode::new(utoa(0), 0, 0, utoa(999999999), ());
     println!("genesis: \n{}", genesis);
-    let mut cb = Organizer::new(genesis, 255);
+    let mut cb = Organizer::new(255);
+    println!("\npreinit state \n{}", cb);
+    cb.init(genesis);
+    println!("\npost init state \n{}", cb);
     for i in 1..2000 {
         cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()))
     }
