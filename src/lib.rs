@@ -398,7 +398,10 @@ fn test() {
     }
     println!("\ntree after continuing one of the branches \n{}", cb);
     println!("-----------");
-    println!("This should be the same as the root and nothing else\n{:?}", cb.check_height_to_key_diff());
+    println!(
+        "This should be the same as the root and nothing else\n{:?}",
+        cb.check_height_to_key_diff()
+    );
     println!("Highest node(s): {:?}", cb.highest_nodes());
     cb.apply_callback(utoa(3009), Some(utoa(3000)), &mut callback);
     // cb.list_nodes();
