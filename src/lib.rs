@@ -190,6 +190,34 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy> Organizer<K> {
         longest_key
     }
 
+    pub fn apply_callback<T>(
+        &self,
+        head: K,
+        root: Option<K>,
+        callback: &mut dyn FnMut(&ReorgNode<K>) -> T,
+    ) {
+        let head_node = self
+            .nodes_by_key
+            .get(&head)
+            .expect("there in no node stored corresponding to the greatest logged height");
+        let mut cursor = head_node.parent;
+        while let Some(node) = self.nodes_by_key.get(&cursor) {
+            match root {
+                Some(root_key) => {
+                    if node.key != root_key {
+                        cursor = root_key
+                    } else {
+                        break;
+                    }
+                }
+                None => {
+                    cursor = node.parent;
+                }
+            }
+            callback(node);
+        }
+    }
+
     /// Utility function that takes the lists of nodes stored by key and nodes stored
     /// by their height, and checks for node that are only logged by height and not by key.
     /// This should always only return the current root.
@@ -331,6 +359,11 @@ fn utoa(u: u64) -> [u8; 32] {
     ret
 }
 
+/// Test callback function
+fn callback(node: &ReorgNode<[u8; 32]>) {
+    println!("{:?} : {}", node.key, node.height);
+}
+
 #[test]
 fn test() {
     let genesis = ReorgNode::new(utoa(0), 0, 0, utoa(999999999));
@@ -350,6 +383,7 @@ fn test() {
     println!("\ntree after continuing one of the branches \n{}", cb);
     println!("-----------");
     println!("{:?}", cb.check_height_to_key_diff());
+    cb.apply_callback(utoa(2990), None, &mut callback);
     // cb.list_nodes();
     // println!("deleting branch");
     // cb.delete_children(utoa(2));
