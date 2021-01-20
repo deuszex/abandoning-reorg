@@ -190,6 +190,7 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy> Organizer<K> {
         longest_key
     }
 
+    /// Apply callback from given head to given root, or as long as possible.
     pub fn apply_callback<T>(
         &self,
         head: K,
