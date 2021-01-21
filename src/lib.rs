@@ -51,6 +51,30 @@ impl<K, M> ReorgNode<K, M> {
             custom_meta,
         }
     }
+
+    pub fn key(&self)->&K{
+        &self.key
+    }
+
+    pub fn height(&self)->u64{
+        self.height
+    }
+
+    pub fn value(&self)->u64{
+        self.value
+    }
+    
+    pub fn parent(&self)->&K{
+        &self.parent
+    }
+
+    pub fn children(&self)->&[K]{
+        &self.children
+    }
+
+    pub fn meta(&self)->&M{
+        &self.custom_meta
+    }
 }
 
 impl<K: Default, M: Default> Default for ReorgNode<K, M> {
@@ -183,7 +207,7 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
     }
 
     /// Utility that prints the node stored by their keyes. (Actually displays the nodes)
-    pub fn list_node(&self) {
+    pub fn list_nodes(&self) {
         for node in self.nodes_by_key.values() {
             println!("{}\n", node)
         }
@@ -233,12 +257,26 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
     }
 
     /// Apply callback from given head to given root, or as long as possible.
+    /// If no head is supplied try to go from the highest, but only if
+    /// there is only one node at the greatest height,
     pub fn apply_callback<T>(
         &self,
-        head: K,
+        head: Option<K>,
         root: Option<K>,
         callback: &mut dyn FnMut(&ReorgNode<K, M>) -> T,
     ) {
+        let head = match head{
+            Some(head) => head,
+            None => match self.nodes_by_height.get(&self.height){
+                Some(heads)=>{
+                    if heads.len()!=1{
+                        return
+                    }else{
+                        heads[0]
+                    }
+                },None=>return
+            }
+        };
         let head_node = self
             .nodes_by_key
             .get(&head)
@@ -396,59 +434,4 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
     pub fn highest_nodes(&self) -> &[K] {
         self.nodes_by_height.get(&self.height).unwrap()
     }
-}
-
-/// Utility function that creates a key([u8;32]) from a u64
-fn utoa(u: u64) -> [u8; 32] {
-    let mut ret = [0u8; 32];
-    let mut vec = u.to_ne_bytes().to_vec();
-    vec.append(&mut [0u8; 24].to_vec());
-    ret.copy_from_slice(&vec);
-    ret
-}
-
-/// Test callback function
-fn callback(node: &ReorgNode<[u8; 32], ()>) {
-    println!("{:?} : {}", node.key, node.height);
-}
-
-#[test]
-fn test() {
-    // Test intentionally fails
-    let genesis = ReorgNode::new(utoa(0), 0, 0, utoa(999999999), ());
-    println!("genesis: \n{}", genesis);
-    let mut cb = Organizer::new(255);
-    println!("\npreinit state \n{}", cb);
-    cb.init(genesis);
-    println!("\npost init state \n{}", cb);
-    for i in 1..2000 {
-        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()))
-    }
-    println!("\ntree before pushing extra branches \n{}", cb);
-    for i in 0..10 {
-        cb.insert(ReorgNode::new(utoa(2000 + i), 1996, 0, utoa(1995), ()));
-    }
-    println!("\ntree after pushing extra branches \n{}", cb);
-    for i in 0..1000 {
-        cb.insert(ReorgNode::new(
-            utoa(2010 + i),
-            1997 + i,
-            0,
-            utoa(2009 + i),
-            (),
-        ));
-    }
-    println!("\ntree after continuing one of the branches \n{}", cb);
-    println!("-----------");
-    println!(
-        "This should be the same as the root and nothing else\n{:?}",
-        cb.check_height_to_key_diff()
-    );
-    println!("Highest node(s): {:?}", cb.highest_nodes());
-    cb.apply_callback(utoa(3009), Some(utoa(3000)), &mut callback);
-    // cb.list_nodes();
-    // println!("deleting branch");
-    // cb.delete_children(utoa(2));
-    // cb.list_nodes();
-    assert!(false)
 }
