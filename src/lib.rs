@@ -52,27 +52,27 @@ impl<K, M> ReorgNode<K, M> {
         }
     }
 
-    pub fn key(&self)->&K{
+    pub fn key(&self) -> &K {
         &self.key
     }
 
-    pub fn height(&self)->u64{
+    pub fn height(&self) -> u64 {
         self.height
     }
 
-    pub fn value(&self)->u64{
+    pub fn value(&self) -> u64 {
         self.value
     }
-    
-    pub fn parent(&self)->&K{
+
+    pub fn parent(&self) -> &K {
         &self.parent
     }
 
-    pub fn children(&self)->&[K]{
+    pub fn children(&self) -> &[K] {
         &self.children
     }
 
-    pub fn meta(&self)->&M{
+    pub fn meta(&self) -> &M {
         &self.custom_meta
     }
 }
@@ -107,6 +107,9 @@ pub struct Organizer<K, M> {
     /// The predetermined depth we check the branches to. Any node older than this
     /// are discarded.
     allowed_depth: u64,
+    /// Sets the Organizer to search for the "most valuable" branches instead
+    /// of the longest ones. Accumulates the value fields of the nodes.
+    value_based: bool,
 }
 
 impl<K: Debug, M: Debug> Display for Organizer<K, M> {
@@ -125,13 +128,20 @@ impl<K: Default, M: Default> Default for Organizer<K, M> {
             nodes_by_height: HashMap::new(),
             buffer: HashMap::new(),
             allowed_depth: 255,
+            value_based: false,
         }
     }
 }
 
 impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organizer<K, M> {
     /// Default state constructor with predetermined max depth.
-    pub fn new(allowed_depth: u64) -> Organizer<K, M> {
+    /// Examples
+    /// ```
+    /// use abandoning_reorg::Organizer;
+    ///
+    /// abandoning_reorg::Organizer::new(777);
+    /// ```
+    pub fn new(allowed_depth: u64, value_based: bool) -> Organizer<K, M> {
         Self {
             height: 0,
             root: ReorgNode::default(),
@@ -139,13 +149,26 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
             nodes_by_height: HashMap::new(),
             buffer: HashMap::new(),
             allowed_depth,
+            value_based,
         }
     }
 
     /// Constructor function that takes the first root node - possibly the genesis node -
     /// and the depth we want to allow reorganization to. Stores the root node in its slot,
     /// as well as by height. Root is not stored by key, only by height.
-    pub fn new_with(root: ReorgNode<K, M>, allowed_depth: u64) -> Organizer<K, M> {
+    /// Examples
+    /// ```
+    /// use abandoning_reorg::Organizer;
+    /// use abandoning_reorg::ReorgNode;
+    ///
+    /// let initial_node = ReorgNode::default();
+    /// Organizer::<[u8; 32], ()>::new_with(initial_node, 777);
+    /// ```
+    pub fn new_with(
+        root: ReorgNode<K, M>,
+        allowed_depth: u64,
+        value_based: bool,
+    ) -> Organizer<K, M> {
         let mut nodes_by_height = HashMap::new();
         nodes_by_height.insert(root.height, vec![root.key]);
         Self {
@@ -155,10 +178,20 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
             nodes_by_height,
             buffer: HashMap::new(),
             allowed_depth,
+            value_based,
         }
     }
 
     /// Init function, sets a new root.
+    /// Examples
+    /// ```
+    /// use abandoning_reorg::Organizer;
+    /// use abandoning_reorg::ReorgNode;
+    ///
+    /// let initial_node = ReorgNode::default();
+    /// let organizer = Organizer::default;
+    /// organizer.init(initial_node);
+    /// ```
     pub fn init(&mut self, first_root: ReorgNode<K, M>) {
         self.height = first_root.height;
         self.nodes_by_height
@@ -168,8 +201,26 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
 
     /// Returns the difference of height and the allowed depth to determine the highest node
     /// that we allow, or zero if the number would be negative.
-    fn allowed_oldest(&self) -> u64 {
+    ///
+    /// Examples
+    /// ```
+    /// use crate::abandoning_reorg::Organizer;
+    /// use crate::abandoning_reorg::ReorgNode;
+    ///
+    /// let initial_node = ReorgNode::default();
+    /// let organizer = Organizer::<[u8; 32], ()>::new_with(initial_node, 777);
+    /// assert_eq!(organizer.allowed_oldest(),777);
+    ///
+    /// let organizer = Organizer::<[u8; 32], ()>::default();
+    /// assert_eq!(organizer.allowed_oldest(), 255);
+    /// ```
+    pub fn allowed_oldest(&self) -> u64 {
         self.height.saturating_sub(self.allowed_depth as u64)
+    }
+
+    /// Switches the Organizer to and from value searching mode.
+    pub fn set_value_based(&mut self, switch: bool) {
+        self.value_based = switch;
     }
 
     /// This function is part of the garbage collection. Deletes every node that in the branch
@@ -217,7 +268,7 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
     /// and has the longest available lineage.
     /// # Panics
     /// If this function call fails that means that at least one node was not stored in the memory.
-    fn find_longest_branch(&self) -> K {
+    pub fn find_longest_branch(&self, most_valuable: Option<bool>) -> K {
         // We take the nodes that correspond to the greatest available
         // height stored in the system as the heads of the tree.
         // This should not fail for we always store every node by their height.
@@ -228,13 +279,17 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
         let mut lead_branches: HashMap<K, u64> = HashMap::new();
         // We check each head of the tree
         for head in heads {
-            let mut height = 0;
+            let mut worth = 0;
             let mut root = head;
             // We count the lineage number of each branch from head to root
             while let Some(node) = self.nodes_by_key.get(root) {
                 if node.parent != self.root.key {
                     root = &node.parent;
-                    height += 1;
+                    worth += if most_valuable.unwrap_or(self.value_based) {
+                        node.value
+                    } else {
+                        1
+                    };
                 } else {
                     // When we reached the roots immidiate child we break out of the loop
                     break;
@@ -242,18 +297,18 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
             }
             // Insert the height of the branch with the branches root (the system roots child)
             // as the key.
-            lead_branches.insert(*root, height);
+            lead_branches.insert(*root, worth);
         }
-        let (mut longest_key, mut longest_height) = (K::default(), 0);
+        let (mut most_valuable_key, mut greatest_worth) = (K::default(), 0);
         // After the parsed every branch corresponding to a head, we determine the longest and return
         // its key
-        for (key, height) in lead_branches {
-            if height > longest_height {
-                longest_height = height;
-                longest_key = key;
+        for (key, worth) in lead_branches {
+            if worth > greatest_worth {
+                greatest_worth = worth;
+                most_valuable_key = key;
             }
         }
-        longest_key
+        most_valuable_key
     }
 
     /// Apply callback from given head to given root, or as long as possible.
@@ -265,17 +320,18 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
         root: Option<K>,
         callback: &mut dyn FnMut(&ReorgNode<K, M>) -> T,
     ) {
-        let head = match head{
+        let head = match head {
             Some(head) => head,
-            None => match self.nodes_by_height.get(&self.height){
-                Some(heads)=>{
-                    if heads.len()!=1{
-                        return
-                    }else{
+            None => match self.nodes_by_height.get(&self.height) {
+                Some(heads) => {
+                    if heads.len() != 1 {
+                        return;
+                    } else {
                         heads[0]
                     }
-                },None=>return
-            }
+                }
+                None => return,
+            },
         };
         let head_node = self
             .nodes_by_key
@@ -325,7 +381,7 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
     /// Panics
     /// A panic will occur if a node has a child listed that we do not have
     /// stored by its key.
-    pub fn insert(&mut self, node: ReorgNode<K, M>) {
+    pub fn insert(&mut self, node: ReorgNode<K, M>, most_valuable: Option<bool>) {
         // if new node older than we search, we don't care about it
         if node.height <= self.allowed_oldest() {
             return;
@@ -349,10 +405,12 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
                     let remove = self.root.children.clone();
                     // We replace the current root with its child that heirs the longest lineage.
                     // If this fails that means that the branch has already been removed.
-                    self.root = self
-                        .nodes_by_key
-                        .remove(&self.find_longest_branch())
-                        .unwrap();
+                    self.root =
+                        self.nodes_by_key
+                            .remove(&self.find_longest_branch(Some(
+                                most_valuable.unwrap_or(self.value_based),
+                            )))
+                            .unwrap();
                     for dead_branch in remove {
                         // we delete every branch stemming from the root other than the longest one
                         if dead_branch != self.root.key {
@@ -425,12 +483,9 @@ impl<K: Default + Eq + Hash + Clone + Debug + Copy, M: Debug + Default> Organize
         for bc in buffer_clear {
             self.buffer.remove(&bc);
         }
-        // TODO handle nodes with greater height than current height
-        // TODO handle nodes in the acceptable height that doesn't have
-        //      parent in the system.
-        // buffer?
     }
 
+    /// Getter for the keys to the nodes at the current greatest height.
     pub fn highest_nodes(&self) -> &[K] {
         self.nodes_by_height.get(&self.height).unwrap()
     }

@@ -1,7 +1,4 @@
-use abandoning_reorg::{
-    ReorgNode,
-    Organizer
-};
+use abandoning_reorg::{Organizer, ReorgNode};
 
 /// Utility function that creates a key([u8;32]) from a u64
 fn utoa(u: u64) -> [u8; 32] {
@@ -12,12 +9,12 @@ fn utoa(u: u64) -> [u8; 32] {
     ret
 }
 
-fn create_test_filled() -> Organizer<[u8;32], ()>{
+fn create_test_filled() -> Organizer<[u8; 32], ()> {
     let genesis = ReorgNode::new(utoa(0), 0, 0, utoa(999999999), ());
-    let mut cb = Organizer::new(255);
+    let mut cb = Organizer::new(255, false);
     cb.init(genesis);
     for i in 1..2000 {
-        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()))
+        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()), None)
     }
     cb
 }
@@ -29,29 +26,29 @@ fn callback(node: &ReorgNode<[u8; 32], ()>) {
 
 #[test]
 fn new_test() {
-    Organizer::<[u8;32], ()>::new(255);
+    Organizer::<[u8; 32], ()>::new(255, false);
 }
 
 #[test]
 fn default_test() {
-    Organizer::<[u8;32], ()>::default();
+    Organizer::<[u8; 32], ()>::default();
 }
 
 #[test]
 fn new_with_test() {
-    Organizer::<[u8;32], ()>::new_with(ReorgNode::default(), 255);
+    Organizer::<[u8; 32], ()>::new_with(ReorgNode::default(), 255, false);
 }
 
 #[test]
 fn insert_test() {
     let genesis = ReorgNode::new(utoa(0), 0, 0, utoa(999999999), ());
     println!("genesis: \n{}", genesis);
-    let mut cb = Organizer::new(255);
+    let mut cb = Organizer::new(255, false);
     println!("\npreinit state \n{}", cb);
     cb.init(genesis);
     println!("\npost init state \n{}", cb);
     for i in 1..2000 {
-        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()))
+        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()), None)
     }
 }
 
@@ -59,12 +56,12 @@ fn insert_test() {
 fn callback_test() {
     let genesis = ReorgNode::new(utoa(0), 0, 0, utoa(999999999), ());
     println!("genesis: \n{}", genesis);
-    let mut cb = Organizer::new(255);
+    let mut cb = Organizer::new(255, false);
     println!("\npreinit state \n{}", cb);
     cb.init(genesis);
     println!("\npost init state \n{}", cb);
     for i in 1..2000 {
-        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()))
+        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()), None)
     }
 }
 
@@ -79,26 +76,26 @@ fn test() {
     // Test intentionally fails
     let genesis = ReorgNode::new(utoa(0), 0, 0, utoa(999999999), ());
     println!("genesis: \n{}", genesis);
-    let mut cb = Organizer::new(255);
+    let mut cb = Organizer::new(255, false);
     println!("\npreinit state \n{}", cb);
     cb.init(genesis);
     println!("\npost init state \n{}", cb);
     for i in 1..2000 {
-        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()))
+        cb.insert(ReorgNode::new(utoa(i), i, 0, utoa(i - 1), ()), None)
     }
     println!("\ntree before pushing extra branches \n{}", cb);
     for i in 0..10 {
-        cb.insert(ReorgNode::new(utoa(2000 + i), 1996, 0, utoa(1995), ()));
+        cb.insert(
+            ReorgNode::new(utoa(2000 + i), 1996, 0, utoa(1995), ()),
+            None,
+        );
     }
     println!("\ntree after pushing extra branches \n{}", cb);
     for i in 0..1000 {
-        cb.insert(ReorgNode::new(
-            utoa(2010 + i),
-            1997 + i,
-            0,
-            utoa(2009 + i),
-            (),
-        ));
+        cb.insert(
+            ReorgNode::new(utoa(2010 + i), 1997 + i, 0, utoa(2009 + i), ()),
+            None,
+        );
     }
     println!("\ntree after continuing one of the branches \n{}", cb);
     println!("-----------");
